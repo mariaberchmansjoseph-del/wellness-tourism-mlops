@@ -1,0 +1,37 @@
+{
+  "TypeofContact": {
+    "Self Enquiry": 1,
+    "Company Invited": 0
+  },
+  "Occupation": {
+    "Salaried": 2,
+    "Free Lancer": 0,
+    "Small Business": 3,
+    "Large Business": 1
+  },
+  "Gender": {
+    "Female": 1,
+    "Male": 2,
+    "Fe Male": 0
+  },
+  "ProductPitched": {
+    "Deluxe": 1,
+    "Basic": 0,
+    "Standard": 3,
+    "Super Deluxe": 4,
+    "King": 2
+  },
+  "MaritalStatus": {
+    "Single": 2,
+    "Divorced": 0,
+    "Married": 1,
+    "Unmarried": 3
+  },
+  "Designation": {
+    "Manager": 2,
+    "Executive": 1,
+    "Senior Manager": 3,
+    "AVP": 0,
+    "VP": 4
+  }
+}

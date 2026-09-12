@@ -1,0 +1,32 @@
+{
+  "model_name": "Bagging",
+  "metrics": {
+    "roc_auc": 0.9674030909073765,
+    "accuracy": 0.9213075060532687,
+    "f1_score": 0.7636363636363637,
+    "precision": 0.9051724137931034,
+    "recall": 0.660377358490566
+  },
+  "model_file": "best_model.pkl",
+  "features": [
+    "Unnamed: 0",
+    "Age",
+    "TypeofContact",
+    "CityTier",
+    "DurationOfPitch",
+    "Occupation",
+    "Gender",
+    "NumberOfPersonVisiting",
+    "NumberOfFollowups",
+    "ProductPitched",
+    "PreferredPropertyStar",
+    "MaritalStatus",
+    "NumberOfTrips",
+    "Passport",
+    "PitchSatisfactionScore",
+    "OwnCar",
+    "NumberOfChildrenVisiting",
+    "Designation",
+    "MonthlyIncome"
+  ]
+}
