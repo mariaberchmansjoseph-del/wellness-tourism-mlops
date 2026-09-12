@@ -1,0 +1,236 @@
+
+# .github/workflows/pipeline.yml
+# PURPOSE: Automate the full ML pipeline on every push to main.
+
+name: MLOps Pipeline — Wellness Tourism Prediction
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:    # allows manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 1: DATA REGISTRATION
+  # ──────────────────────────────────────────────────────────
+  data-registration:
+    name: "Step 1 — Data Registration"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: pip install pandas numpy
+
+      - name: Run Data Validation
+        run: python scripts/validate_data.py
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 2: DATA PREPARATION
+  # ──────────────────────────────────────────────────────────
+  data-preparation:
+    name: "Step 2 — Data Preparation"
+    runs-on: ubuntu-latest
+    needs: data-registration
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: pip install pandas numpy scikit-learn
+
+      - name: Run Data Preparation
+        run: python scripts/prepare_data.py
+
+      - name: Upload Data Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-splits
+          path: |
+            data/train.csv
+            data/test.csv
+            models/encoding_map.json
+          retention-days: 1
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 3: MODEL TRAINING
+  # ──────────────────────────────────────────────────────────
+  model-training:
+    name: "Step 3 — Model Training and Evaluation"
+    runs-on: ubuntu-latest
+    needs: data-preparation
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install All Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download Data Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: data-splits
+          path: .
+
+      - name: Run Model Training
+        run: python scripts/train_model.py
+
+      - name: Verify Model Saved
+        run: |
+          python -c "
+          import joblib, json
+          model = joblib.load('models/best_model.pkl')
+          print(f'Model type: {type(model).__name__}')
+          with open('models/model_metadata.json') as f:
+              meta = json.load(f)
+          print(f'Best model: {meta[\"model_name\"]}')
+          print(f'Test AUC:   {meta[\"metrics\"][\"roc_auc\"]}')
+          "
+
+      - name: Upload Model Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-model
+          path: |
+            models/best_model.pkl
+            models/model_metadata.json
+            models/encoding_map.json
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 4: COMMIT MODEL TO REPOSITORY
+  # ──────────────────────────────────────────────────────────
+  commit-model:
+    name: "Step 4 — Commit Model to Repository"
+    runs-on: ubuntu-latest
+    needs: model-training
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Model Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: models/
+
+      - name: Configure Git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and Push Model
+        run: |
+          git add models/
+          git diff --staged --quiet || git commit -m \
+            "ci: auto-update best model [skip ci]"
+          git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────
+  # JOB 5: DEPLOY TO HUGGINGFACE SPACES
+  # ──────────────────────────────────────────────────────────
+  deploy-to-huggingface:
+    name: "Step 5 — Deploy to HuggingFace Spaces"
+    runs-on: ubuntu-latest
+    needs: commit-model
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Model Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: models/
+
+      - name: Install HuggingFace Hub
+        run: pip install huggingface-hub
+
+      - name: Deploy App and Model to HuggingFace Spaces
+        env:
+          HF_TOKEN:    ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+        run: |
+          python - <<'EOF'
+          import os
+          from huggingface_hub import HfApi
+
+          api      = HfApi()
+          token    = os.environ["HF_TOKEN"]
+          username = os.environ["HF_USERNAME"]
+          repo_id  = f"{username}/wellness-tourism-predictor"
+
+          print(f"Deploying to: {repo_id}")
+
+          # Upload Streamlit app
+          api.upload_file(
+              path_or_fileobj = "app/app.py",
+              path_in_repo    = "app.py",
+              repo_id         = repo_id,
+              repo_type       = "space",
+              token           = token
+          )
+
+          # Upload model files
+          for fname in ["best_model.pkl",
+                        "model_metadata.json",
+                        "encoding_map.json"]:
+              local = f"models/{fname}"
+              if os.path.exists(local):
+                  api.upload_file(
+                      path_or_fileobj = local,
+                      path_in_repo    = f"models/{fname}",
+                      repo_id         = repo_id,
+                      repo_type       = "space",
+                      token           = token
+                  )
+                  print(f"  Uploaded: {fname}")
+
+          # Upload requirements
+          api.upload_file(
+              path_or_fileobj = "requirements.txt",
+              path_in_repo    = "requirements.txt",
+              repo_id         = repo_id,
+              repo_type       = "space",
+              token           = token
+          )
+
+          print("Deployment complete!")
+          EOF
+
+      - name: Print Deployment URL
+        env:
+          HF_USERNAME: ${{ secrets.HF_USERNAME }}
+        run: |
+          echo "App live at:"
+          echo "https://huggingface.co/spaces/${HF_USERNAME}/wellness-tourism-predictor"
